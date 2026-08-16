@@ -32,7 +32,7 @@ The executable also supports `--self-test <sqlite-path>` for deterministic fixtu
 
 ## Data and settings
 
-The default database path is `%APPDATA%\\VRCX\\VRCX.sqlite3`. A custom path can be supplied through the persisted settings model. Settings are stored at `%LOCALAPPDATA%\\VRCX Optimal Time App\\settings.toml` using a versioned TOML schema.
+The default database path is `%APPDATA%\\VRCX\\VRCX.sqlite3`. A custom path can be supplied through the persisted settings model. User settings are stored as `settings.toml` beside `VRCXOptimalTimeApp.exe` using a versioned TOML schema, so the portable app keeps its inputs with the executable. The executable directory must be writable. Existing settings from older builds under `%LOCALAPPDATA%\\VRCX Optimal Time App` are not imported automatically.
 
 Invalid user IDs and invalid friend-ID lines block a refresh. A missing, locked, or schema-incompatible database is reported as a typed status while the last successful graph remains available.
 

@@ -50,7 +50,9 @@ pub fn render(ui: &mut eframe::egui::Ui, graph: &WeeklyGraph, visible: &[bool; 7
         .on_hover_text("Restore the automatic graph bounds")
         .clicked();
     let mut plot = Plot::new("weekly-availability")
-        .legend(Legend::default())
+        // Keep the weekday legend away from the hover readout. The readout can
+        // be much wider than the plot when it includes a full time/value pair.
+        .legend(Legend::default().position(Corner::RightBottom))
         .allow_scroll(false)
         .allow_zoom(true)
         .allow_boxed_zoom(false)

@@ -12,13 +12,17 @@ use crate::{
 };
 
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
-const SETTINGS_DIRECTORY: &str = "VRCX Optimal Time App";
 const SETTINGS_FILE_NAME: &str = "settings.toml";
 
 #[derive(Debug, Error)]
 pub enum SettingsError {
-    #[error("LOCALAPPDATA is unavailable; cannot determine the settings path")]
-    LocalAppDataUnavailable,
+    #[error("could not determine the running executable path: {source}")]
+    ExecutablePath {
+        #[source]
+        source: io::Error,
+    },
+    #[error("the running executable has no parent directory; cannot determine the settings path")]
+    ExecutableDirectoryUnavailable,
     #[error("could not read settings file {path}: {source}")]
     Read {
         path: PathBuf,
@@ -81,11 +85,12 @@ struct SettingsForSave<'a> {
 }
 
 pub fn default_settings_path() -> Result<PathBuf, SettingsError> {
-    let local_app_data =
-        env::var_os("LOCALAPPDATA").ok_or(SettingsError::LocalAppDataUnavailable)?;
-    Ok(PathBuf::from(local_app_data)
-        .join(SETTINGS_DIRECTORY)
-        .join(SETTINGS_FILE_NAME))
+    let executable =
+        env::current_exe().map_err(|source| SettingsError::ExecutablePath { source })?;
+    let directory = executable
+        .parent()
+        .ok_or(SettingsError::ExecutableDirectoryUnavailable)?;
+    Ok(directory.join(SETTINGS_FILE_NAME))
 }
 
 pub fn load_settings(path: &Path) -> Result<AppSettings, SettingsError> {

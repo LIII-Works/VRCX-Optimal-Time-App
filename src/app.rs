@@ -44,13 +44,20 @@ struct RefreshCompletion {
 impl Default for VrcxOptimalTimeApp {
     fn default() -> Self {
         let (completion_sender, completion_receiver) = mpsc::channel();
-        let settings_path = default_settings_path().ok();
-        let (settings, startup_status) = match settings_path.as_deref() {
-            Some(path) => match load_settings(path) {
-                Ok(settings) => (settings, AppStatus::Idle),
-                Err(error) => (AppSettings::default(), AppStatus::Error(error.to_string())),
+        let (settings_path, settings, startup_status) = match default_settings_path() {
+            Ok(path) => match load_settings(&path) {
+                Ok(settings) => (Some(path), settings, AppStatus::Idle),
+                Err(error) => (
+                    Some(path),
+                    AppSettings::default(),
+                    AppStatus::Error(error.to_string()),
+                ),
             },
-            None => (AppSettings::default(), AppStatus::Idle),
+            Err(error) => (
+                None,
+                AppSettings::default(),
+                AppStatus::Error(error.to_string()),
+            ),
         };
         let your_id_edit = settings.analysis.your_user_id.clone();
         let friend_ids_edit = settings.analysis.friend_ids.join("\n");

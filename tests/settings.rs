@@ -2,7 +2,9 @@ use std::{fs, path::PathBuf};
 
 use vrcx_optimal_time_app::{
     model::{AppSettings, MissingDataBehavior},
-    settings::{SETTINGS_SCHEMA_VERSION, SettingsError, load_settings, save_settings},
+    settings::{
+        SETTINGS_SCHEMA_VERSION, SettingsError, default_settings_path, load_settings, save_settings,
+    },
 };
 
 fn test_path(test_name: &str) -> PathBuf {
@@ -15,6 +17,14 @@ fn test_path(test_name: &str) -> PathBuf {
 fn cleanup(path: &std::path::Path) {
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(path.with_extension("toml.tmp"));
+}
+
+#[test]
+fn default_settings_path_is_next_to_the_running_executable() {
+    let executable = std::env::current_exe().unwrap();
+    let expected = executable.parent().unwrap().join("settings.toml");
+
+    assert_eq!(default_settings_path().unwrap(), expected);
 }
 
 #[test]
