@@ -30,6 +30,7 @@ Copy-Item -LiteralPath $binary -Destination $outputBinary -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot "README.md") -Destination $dist -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot "LICENSE") -Destination $dist -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot "THIRD_PARTY_NOTICES.txt") -Destination $dist -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot "src\analyzer\upstream_license.txt") -Destination $dist -Force
 
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $outputBinary).Hash
 "$hash  VRCXOptimalTimeApp.exe" | Set-Content -Encoding ASCII (Join-Path $dist "SHA256SUMS.txt")
