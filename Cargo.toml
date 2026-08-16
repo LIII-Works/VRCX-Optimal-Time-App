@@ -1,0 +1,24 @@
+[package]
+name = "vrcx-optimal-time-app"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+chrono = { version = "=0.4.45", features = ["serde"] }
+eframe = { version = "=0.36.1", default-features = false, features = ["default_fonts", "glow", "x11"] }
+egui_plot = "=0.37.0"
+num-traits = "=0.2.19"
+rfd = "=0.17.2"
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+thiserror = "=2.0.20"
+toml = "=1.1.4"
+
+[build-dependencies]
+winresource = "=0.1.31"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

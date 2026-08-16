@@ -1,0 +1,6 @@
+VRCX Optimal Time App includes behavior derived from vrcx-optimal-time.
+Upstream source pin: zkxs/vrcx-optimal-time d28cb95e9d14b630d83e682752959162ee3c86e7.
+
+Copyright 2022-2024 Michael Ripley
+
+The upstream vrcx-optimal-time MIT license is included at src/analyzer/upstream_license.txt.

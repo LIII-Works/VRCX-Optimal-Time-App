@@ -1,0 +1,6 @@
+# Local reference inputs contain private VRCX identifiers and activity data.
+# They remain available on this machine but must never enter source control.
+Example/
+
+# Cargo build output is reproducible and never part of source or a release.
+target/
