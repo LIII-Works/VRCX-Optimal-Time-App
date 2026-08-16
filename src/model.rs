@@ -27,6 +27,8 @@ pub struct AnalysisSettings {
     pub normalize: bool,
     #[serde(default)]
     pub start_time: Option<DateTime<Local>>,
+    #[serde(default)]
+    pub end_time: Option<DateTime<Local>>,
     #[serde(default = "default_minimum_activations")]
     pub minimum_activations: u32,
     #[serde(default)]
@@ -43,6 +45,7 @@ impl Default for AnalysisSettings {
             bucket_duration: Duration::from_secs(600),
             normalize: false,
             start_time: None,
+            end_time: None,
             minimum_activations: 1,
             missing_data: MissingDataBehavior::Gap,
         }
@@ -78,6 +81,7 @@ pub struct AnalysisRequest {
     pub bucket_duration: Duration,
     pub normalize: bool,
     pub start_time: Option<DateTime<Local>>,
+    pub end_time: Option<DateTime<Local>>,
     pub minimum_activations: u32,
     pub missing_data: MissingDataBehavior,
 }
@@ -94,6 +98,7 @@ impl Default for AnalysisRequest {
             bucket_duration: settings.bucket_duration,
             normalize: settings.normalize,
             start_time: settings.start_time,
+            end_time: settings.end_time,
             minimum_activations: settings.minimum_activations,
             missing_data: settings.missing_data,
         }

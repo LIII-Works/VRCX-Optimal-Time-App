@@ -28,13 +28,14 @@ The executable also supports `--self-test <sqlite-path>` for deterministic fixtu
 1. Keep VRCX installed and running for long enough to capture enough online, offline, and activity history for a useful graph. The app cannot create history that VRCX has not collected yet.
 2. Enter your VRChat user ID in the `Your ID` box.
 3. Enter friend IDs in `Friend IDs`, one ID per line.
-4. The analysis starts automatically after valid input changes. If the default VRCX database is not detected, use `Choose database...` in the warning or the `Database` control to select the SQLite file manually.
+4. Optionally enable `Start` and/or `End` under `Analysis time range` and enter numeric `YYYY`, `MM`, `DD`, `HH`, and `mm` values. Invalid calendar dates, clock values, and reversed ranges are rejected.
+5. The analysis starts automatically after valid input changes. If the default VRCX database is not detected, use `Choose database...` in the warning or the `Database` control to select the SQLite file manually.
 
 ## Data and settings
 
 The default database path is `%APPDATA%\\VRCX\\VRCX.sqlite3`. A custom path can be supplied through the persisted settings model. User settings are stored as `settings.toml` beside `VRCXOptimalTimeApp.exe` using a versioned TOML schema, so the portable app keeps its inputs with the executable. The executable directory must be writable. Existing settings from older builds under `%LOCALAPPDATA%\\VRCX Optimal Time App` are not imported automatically.
 
-Invalid user IDs and invalid friend-ID lines block a refresh. A missing, locked, or schema-incompatible database is reported as a typed status while the last successful graph remains available.
+Invalid user IDs, invalid friend-ID lines, and invalid time-range values block a refresh. A missing, locked, or schema-incompatible database is reported as a typed status while the last successful graph remains available. The time range uses local time, includes the Start instant, and ends before the End instant.
 
 ## Build and test
 

@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use chrono::{DateTime, Datelike, Local, Timelike};
+use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
 use rusqlite::Connection;
 use vrcx_optimal_time_app::{
     analyzer::{AnalyzerError, analyze},
@@ -138,6 +138,7 @@ fn analyzer_returns_weekly_buckets_without_mutating_its_database() {
         bucket_duration: Duration::from_secs(10 * 60),
         normalize: false,
         start_time: None::<DateTime<Local>>,
+        end_time: None::<DateTime<Local>>,
         minimum_activations: 1,
         missing_data: MissingDataBehavior::Gap,
     };
@@ -175,6 +176,7 @@ fn analyzer_accepts_valid_subminute_bucket_durations_without_panicking() {
         bucket_duration: Duration::from_secs(30),
         normalize: false,
         start_time: None::<DateTime<Local>>,
+        end_time: None::<DateTime<Local>>,
         minimum_activations: 1,
         missing_data: MissingDataBehavior::Gap,
     };
@@ -197,6 +199,7 @@ fn analyzer_assigns_partial_activity_to_the_bucket_containing_interval_start() {
         bucket_duration: Duration::from_secs(10 * 60),
         normalize: true,
         start_time: None::<DateTime<Local>>,
+        end_time: None::<DateTime<Local>>,
         minimum_activations: 1,
         missing_data: MissingDataBehavior::Gap,
     };
@@ -250,6 +253,146 @@ fn analyzer_preserves_online_state_across_start_time_boundary() {
     let bucket = (local_start.hour() * 60 + local_start.minute()) as usize / 10;
     assert_eq!(result.graph.weekdays[weekday][bucket], Some(1.0));
 
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn analyzer_clips_running_activity_at_end_time() {
+    let path = fixture_path();
+    create_fixture(&path);
+    let request = AnalysisRequest {
+        your_user_id: USER_ID.to_owned(),
+        database_path: path.clone(),
+        uptime_threshold: Duration::from_secs(15 * 60),
+        bucket_duration: Duration::from_secs(10 * 60),
+        end_time: Some(
+            "2024-01-01T00:15:00Z"
+                .parse::<DateTime<chrono::Utc>>()
+                .unwrap()
+                .with_timezone(&Local),
+        ),
+        ..AnalysisRequest::default()
+    };
+
+    let result = analyze(&request).unwrap();
+    let start_local = "2024-01-01T00:00:00Z"
+        .parse::<DateTime<chrono::Utc>>()
+        .unwrap()
+        .with_timezone(&Local);
+    let end_local = "2024-01-01T00:15:00Z"
+        .parse::<DateTime<chrono::Utc>>()
+        .unwrap()
+        .with_timezone(&Local);
+    let weekday = start_local.weekday().num_days_from_monday() as usize;
+    let start_bucket = (start_local.hour() * 60 + start_local.minute()) as usize / 10;
+    let end_bucket = (end_local.hour() * 60 + end_local.minute()) as usize / 10;
+
+    assert!(result.graph.weekdays[weekday][start_bucket].is_some());
+    assert!(result.graph.weekdays[weekday][end_bucket].is_some());
+    assert!(result.graph.weekdays[weekday][end_bucket + 1].is_none());
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn analyzer_clips_both_bounds_and_friend_graphs_to_same_interval() {
+    let path = fixture_path();
+    create_fixture(&path);
+    let table = USER_ID.replace(['-', '_'], "");
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute(
+            &format!(
+                "insert into {table}_feed_online_offline (created_at, user_id, display_name, type) values
+                 ('2024-01-01T00:05:00Z', ?1, 'Friend A', 'Online'),
+                 ('2024-01-01T00:10:00Z', ?1, 'Friend A', 'Offline'),
+                 ('2024-01-01T00:15:00Z', ?2, 'Friend B', 'Online'),
+                 ('2024-01-01T00:20:00Z', ?2, 'Friend B', 'Offline')"
+            ),
+            [FRIEND_A, FRIEND_B],
+        )
+        .unwrap();
+    drop(connection);
+
+    let start = Local.with_ymd_and_hms(2024, 1, 1, 8, 12, 0).single();
+    let end = Local.with_ymd_and_hms(2024, 1, 1, 8, 18, 0).single();
+    let request = AnalysisRequest {
+        your_user_id: USER_ID.to_owned(),
+        friend_ids: vec![FRIEND_A.to_owned(), FRIEND_B.to_owned()],
+        database_path: path.clone(),
+        start_time: start,
+        end_time: end,
+        ..AnalysisRequest::default()
+    };
+
+    let result = analyze(&request).unwrap();
+    let bucket_index = |value: DateTime<Local>| (value.hour() * 60 + value.minute()) as usize / 10;
+    let friend_a_bucket = bucket_index(
+        Local
+            .with_ymd_and_hms(2024, 1, 1, 8, 5, 0)
+            .single()
+            .unwrap(),
+    );
+    let friend_b_bucket = bucket_index(
+        Local
+            .with_ymd_and_hms(2024, 1, 1, 8, 15, 0)
+            .single()
+            .unwrap(),
+    );
+    let weekday = start.unwrap().weekday().num_days_from_monday() as usize;
+
+    assert!(
+        result.friend_graphs[0]
+            .graph
+            .weekdays
+            .iter()
+            .flatten()
+            .all(Option::is_none)
+    );
+    assert_eq!(
+        result.friend_graphs[1].graph.weekdays[weekday][friend_b_bucket],
+        Some(1.0)
+    );
+    assert!(result.graph.weekdays[weekday][friend_a_bucket].is_none());
+    assert!(result.graph.weekdays[weekday][friend_b_bucket].is_some());
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn analyzer_rejects_range_with_no_activity_after_clipping() {
+    let path = fixture_path();
+    create_fixture(&path);
+    let request = AnalysisRequest {
+        your_user_id: USER_ID.to_owned(),
+        database_path: path.clone(),
+        start_time: Local.with_ymd_and_hms(2024, 1, 1, 9, 0, 0).single(),
+        end_time: Local.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).single(),
+        ..AnalysisRequest::default()
+    };
+
+    assert!(matches!(
+        analyze(&request),
+        Err(AnalyzerError::NoUsableActivity { .. })
+    ));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn analyzer_rejects_empty_start_and_end_interval() {
+    let path = fixture_path();
+    create_fixture(&path);
+    let bound = Local.with_ymd_and_hms(2024, 1, 1, 8, 15, 0).single();
+    let request = AnalysisRequest {
+        your_user_id: USER_ID.to_owned(),
+        database_path: path.clone(),
+        start_time: bound,
+        end_time: bound,
+        ..AnalysisRequest::default()
+    };
+
+    assert!(matches!(
+        analyze(&request),
+        Err(AnalyzerError::NoUsableActivity { .. })
+    ));
     let _ = fs::remove_file(path);
 }
 

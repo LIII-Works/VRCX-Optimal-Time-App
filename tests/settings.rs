@@ -1,5 +1,7 @@
 use std::{fs, path::PathBuf};
 
+use chrono::{Local, TimeZone};
+
 use vrcx_optimal_time_app::{
     model::{AppSettings, MissingDataBehavior},
     settings::{
@@ -43,6 +45,8 @@ fn settings_round_trip_through_versioned_toml_and_atomic_replacement() {
     let mut settings = AppSettings::default();
     settings.analysis.your_user_id = "usr_550e8400-e29b-41d4-a716-446655440000".to_owned();
     settings.analysis.missing_data = MissingDataBehavior::Zero;
+    settings.analysis.start_time = Local.with_ymd_and_hms(2024, 1, 1, 8, 30, 0).single();
+    settings.analysis.end_time = Local.with_ymd_and_hms(2024, 2, 29, 18, 45, 0).single();
     settings.window.friend_ids_collapsed = true;
 
     save_settings(&path, &settings).unwrap();
@@ -78,6 +82,7 @@ fn version_one_migrates_missing_current_fields_to_defaults() {
         loaded.analysis.bucket_duration,
         AppSettings::default().analysis.bucket_duration
     );
+    assert_eq!(loaded.analysis.end_time, None);
     assert_eq!(loaded.window, AppSettings::default().window);
     cleanup(&path);
 }

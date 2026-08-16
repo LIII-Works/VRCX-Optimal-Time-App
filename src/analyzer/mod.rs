@@ -16,6 +16,7 @@ use crate::{
     model::{AnalysisRequest, MissingDataBehavior, WeeklyGraph},
     validation::{
         ValidationError, parse_user_id, validate_bucket_duration, validate_minimum_activations,
+        validate_time_range,
     },
 };
 
@@ -93,6 +94,7 @@ struct BucketValue {
 pub fn analyze(request: &AnalysisRequest) -> Result<AnalysisResult, AnalyzerError> {
     validate_bucket_duration(request.bucket_duration)?;
     validate_minimum_activations(request.minimum_activations)?;
+    validate_time_range(request.start_time, request.end_time)?;
     let normalized_user_id = parse_user_id(&request.your_user_id, 1)?;
     let table_prefix = normalized_user_id.replace(['-', '_'], "");
     let path = request.database_path.clone();
@@ -116,7 +118,13 @@ pub fn analyze(request: &AnalysisRequest) -> Result<AnalysisResult, AnalyzerErro
     let all_events = read_all_events(&connection, &path, &table_prefix)?;
     let running_intervals = reconstruct_running_intervals(&all_events, request.uptime_threshold)
         .into_iter()
-        .filter_map(|interval| clip_to_start(interval, request.start_time.as_ref()))
+        .filter_map(|interval| {
+            clip_to_range(
+                interval,
+                request.start_time.as_ref(),
+                request.end_time.as_ref(),
+            )
+        })
         .collect::<Vec<_>>();
     if running_intervals.is_empty() {
         return Err(AnalyzerError::NoUsableActivity { path });
@@ -163,10 +171,19 @@ pub fn analyze(request: &AnalysisRequest) -> Result<AnalysisResult, AnalyzerErro
             }
             "Offline" => {
                 if let Some(start) = online_since.remove(user_id) {
-                    let start = request.start_time.as_ref().map_or(start, |analysis_start| {
-                        start.max(analysis_start.with_timezone(&Utc))
-                    });
-                    for interval in clamp_to_running(start, *created_at, &running_intervals) {
+                    let Some(interval) = clip_to_range(
+                        Interval {
+                            start,
+                            end: *created_at,
+                        },
+                        request.start_time.as_ref(),
+                        request.end_time.as_ref(),
+                    ) else {
+                        continue;
+                    };
+                    for interval in
+                        clamp_to_running(interval.start, interval.end, &running_intervals)
+                    {
                         register_online(&interval, request.bucket_duration, &mut buckets);
                         if let Some((_, friend_buckets)) =
                             friend_buckets.iter_mut().find(|(id, _)| id == user_id)
@@ -389,14 +406,18 @@ fn clamp_to_running(
         .collect()
 }
 
-fn clip_to_start(interval: Interval, start_time: Option<&DateTime<Local>>) -> Option<Interval> {
+fn clip_to_range(
+    interval: Interval,
+    start_time: Option<&DateTime<Local>>,
+    end_time: Option<&DateTime<Local>>,
+) -> Option<Interval> {
     let start = start_time.map_or(interval.start, |value| {
         interval.start.max(value.with_timezone(&Utc))
     });
-    (interval.end > start).then_some(Interval {
-        start,
-        end: interval.end,
-    })
+    let end = end_time.map_or(interval.end, |value| {
+        interval.end.min(value.with_timezone(&Utc))
+    });
+    (end > start).then_some(Interval { start, end })
 }
 
 fn register_activity(

@@ -1,5 +1,6 @@
 use std::{collections::HashSet, time::Duration};
 
+use chrono::{DateTime, Local, LocalResult, NaiveDate, TimeZone};
 use thiserror::Error;
 
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
@@ -12,6 +13,19 @@ pub enum ValidationError {
     InvalidBucketDuration { seconds: u64 },
     #[error("minimum activations must be at least 1")]
     InvalidMinimumActivations,
+    #[error("invalid local date or time")]
+    InvalidDateTime,
+    #[error("analysis start time must not be later than end time")]
+    InvalidTimeRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DateTimeParts {
+    pub year: i32,
+    pub month: u32,
+    pub day: u32,
+    pub hour: u32,
+    pub minute: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +79,29 @@ pub fn validate_minimum_activations(value: u32) -> Result<(), ValidationError> {
     (value > 0)
         .then_some(())
         .ok_or(ValidationError::InvalidMinimumActivations)
+}
+
+pub fn local_datetime_from_parts(parts: DateTimeParts) -> Result<DateTime<Local>, ValidationError> {
+    NaiveDate::from_ymd_opt(parts.year, parts.month, parts.day)
+        .and_then(|date| date.and_hms_opt(parts.hour, parts.minute, 0))
+        .and_then(|naive| match Local.from_local_datetime(&naive) {
+            LocalResult::Single(value) => Some(value),
+            LocalResult::None | LocalResult::Ambiguous(_, _) => None,
+        })
+        .ok_or(ValidationError::InvalidDateTime)
+}
+
+pub fn validate_time_range(
+    start: Option<DateTime<Local>>,
+    end: Option<DateTime<Local>>,
+) -> Result<(), ValidationError> {
+    if let (Some(start), Some(end)) = (start, end)
+        && start > end
+    {
+        return Err(ValidationError::InvalidTimeRange);
+    }
+
+    Ok(())
 }
 
 fn is_user_id(input: &str) -> bool {

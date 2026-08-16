@@ -1,8 +1,10 @@
 use std::time::Duration;
 
+use chrono::{Datelike, Local, TimeZone, Timelike};
+
 use vrcx_optimal_time_app::validation::{
-    ValidationError, parse_friend_ids, parse_user_id, validate_bucket_duration,
-    validate_minimum_activations,
+    DateTimeParts, ValidationError, local_datetime_from_parts, parse_friend_ids, parse_user_id,
+    validate_bucket_duration, validate_minimum_activations, validate_time_range,
 };
 
 const UPPER_ID: &str = "usr_550E8400-E29B-41D4-A716-446655440000";
@@ -74,4 +76,74 @@ fn minimum_activations_must_be_positive() {
         validate_minimum_activations(0),
         Err(ValidationError::InvalidMinimumActivations)
     );
+}
+
+#[test]
+fn numeric_parts_build_a_local_datetime_without_text_parsing() {
+    let value = local_datetime_from_parts(DateTimeParts {
+        year: 2024,
+        month: 2,
+        day: 29,
+        hour: 23,
+        minute: 58,
+    })
+    .unwrap();
+
+    assert_eq!(value.year(), 2024);
+    assert_eq!(value.month(), 2);
+    assert_eq!(value.day(), 29);
+    assert_eq!(value.hour(), 23);
+    assert_eq!(value.minute(), 58);
+}
+
+#[test]
+fn impossible_calendar_dates_are_rejected() {
+    for parts in [
+        DateTimeParts {
+            year: 2023,
+            month: 2,
+            day: 29,
+            hour: 12,
+            minute: 0,
+        },
+        DateTimeParts {
+            year: 2024,
+            month: 4,
+            day: 31,
+            hour: 12,
+            minute: 0,
+        },
+        DateTimeParts {
+            year: 2024,
+            month: 1,
+            day: 1,
+            hour: 24,
+            minute: 0,
+        },
+        DateTimeParts {
+            year: 2024,
+            month: 1,
+            day: 1,
+            hour: 0,
+            minute: 60,
+        },
+    ] {
+        assert!(matches!(
+            local_datetime_from_parts(parts),
+            Err(ValidationError::InvalidDateTime)
+        ));
+    }
+}
+
+#[test]
+fn time_range_requires_start_not_later_than_end() {
+    let start = Local.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).single();
+    let end = Local.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).single();
+
+    assert_eq!(
+        validate_time_range(start, end),
+        Err(ValidationError::InvalidTimeRange)
+    );
+    assert!(validate_time_range(start, None).is_ok());
+    assert!(validate_time_range(None, end).is_ok());
 }

@@ -4,6 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use chrono::{DateTime, Datelike, Local, Timelike};
+
 use crate::{
     analyzer::{AnalysisResult, AnalyzerError, FriendGraph, analyze},
     database::resolve_database_path,
@@ -12,7 +14,10 @@ use crate::{
     model::{AnalysisRequest, AppSettings, AppStatus, MissingDataBehavior, WeeklyGraph},
     refresh::{RefreshCoordinator, RefreshReason},
     settings::{default_settings_path, load_settings, save_settings},
-    validation::{parse_friend_ids, parse_user_id, validate_bucket_duration},
+    validation::{
+        DateTimeParts, local_datetime_from_parts, parse_friend_ids, parse_user_id,
+        validate_bucket_duration, validate_time_range,
+    },
 };
 
 pub const APP_TITLE: &str = "VRCX Optimal Time";
@@ -27,7 +32,8 @@ pub struct VrcxOptimalTimeApp {
     your_id_edit: String,
     friend_ids_edit: String,
     friend_ids_invalid_lines: Vec<usize>,
-    start_time_edit: String,
+    start_time_draft: TimeBoundDraft,
+    end_time_draft: TimeBoundDraft,
     weekday_visible: [bool; 7],
     refresh: RefreshCoordinator,
     completion_sender: Sender<RefreshCompletion>,
@@ -61,11 +67,8 @@ impl Default for VrcxOptimalTimeApp {
         };
         let your_id_edit = settings.analysis.your_user_id.clone();
         let friend_ids_edit = settings.analysis.friend_ids.join("\n");
-        let start_time_edit = settings
-            .analysis
-            .start_time
-            .map(|value| value.to_rfc3339())
-            .unwrap_or_default();
+        let start_time_draft = TimeBoundDraft::from_value(settings.analysis.start_time);
+        let end_time_draft = TimeBoundDraft::from_value(settings.analysis.end_time);
         Self {
             settings,
             status: startup_status,
@@ -75,7 +78,8 @@ impl Default for VrcxOptimalTimeApp {
             your_id_edit,
             friend_ids_edit,
             friend_ids_invalid_lines: Vec::new(),
-            start_time_edit,
+            start_time_draft,
+            end_time_draft,
             weekday_visible: [true; 7],
             refresh: RefreshCoordinator::default(),
             completion_sender,
@@ -210,27 +214,35 @@ impl eframe::App for VrcxOptimalTimeApp {
                     analysis_changed = true;
                     settings_changed = true;
                 }
-                ui.label("Start time (RFC3339, optional)");
-                if ui.text_edit_singleline(&mut self.start_time_edit).changed() {
-                    let value = self.start_time_edit.trim();
-                    if value.is_empty() {
-                        self.settings.analysis.start_time = None;
-                        analysis_changed = true;
-                        settings_changed = true;
-                    } else {
-                        match chrono::DateTime::parse_from_rfc3339(value) {
-                            Ok(parsed) => {
-                                self.settings.analysis.start_time =
-                                    Some(parsed.with_timezone(&chrono::Local));
-                                analysis_changed = true;
-                                settings_changed = true;
-                            }
-                            Err(error) => {
-                                self.status = AppStatus::Error(format!(
-                                    "invalid start time; use RFC3339: {error}"
-                                ));
-                            }
+                ui.label("Analysis time range (local time)");
+                if render_time_bound(ui, "Start", &mut self.start_time_draft) {
+                    match commit_time_bound(
+                        &self.start_time_draft,
+                        self.settings.analysis.end_time,
+                        true,
+                    ) {
+                        Ok(value) => {
+                            self.settings.analysis.start_time = value;
+                            self.start_time_draft.error = None;
+                            analysis_changed = true;
+                            settings_changed = true;
                         }
+                        Err(error) => self.start_time_draft.error = Some(error),
+                    }
+                }
+                if render_time_bound(ui, "End", &mut self.end_time_draft) {
+                    match commit_time_bound(
+                        &self.end_time_draft,
+                        self.settings.analysis.start_time,
+                        false,
+                    ) {
+                        Ok(value) => {
+                            self.settings.analysis.end_time = value;
+                            self.end_time_draft.error = None;
+                            analysis_changed = true;
+                            settings_changed = true;
+                        }
+                        Err(error) => self.end_time_draft.error = Some(error),
                     }
                 }
                 ui.horizontal(|ui| {
@@ -435,6 +447,7 @@ impl VrcxOptimalTimeApp {
             bucket_duration: analysis.bucket_duration,
             normalize: analysis.normalize,
             start_time: analysis.start_time,
+            end_time: analysis.end_time,
             minimum_activations: analysis.minimum_activations,
             missing_data: analysis.missing_data,
         };
@@ -526,6 +539,95 @@ fn apply_friend_ids_edit(settings: &mut AppSettings, input: &str) -> Vec<usize> 
     report.invalid_lines
 }
 
+#[derive(Debug, Clone)]
+struct TimeBoundDraft {
+    enabled: bool,
+    parts: DateTimeParts,
+    error: Option<String>,
+}
+
+impl TimeBoundDraft {
+    fn from_value(value: Option<DateTime<Local>>) -> Self {
+        let parts = value.map_or(
+            DateTimeParts {
+                year: 2000,
+                month: 1,
+                day: 1,
+                hour: 0,
+                minute: 0,
+            },
+            |value| DateTimeParts {
+                year: value.year(),
+                month: value.month(),
+                day: value.day(),
+                hour: value.hour(),
+                minute: value.minute(),
+            },
+        );
+        Self {
+            enabled: value.is_some(),
+            parts,
+            error: None,
+        }
+    }
+}
+
+fn render_time_bound(ui: &mut eframe::egui::Ui, label: &str, draft: &mut TimeBoundDraft) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        if ui.checkbox(&mut draft.enabled, label).changed() {
+            changed = true;
+        }
+        ui.label("date/time");
+    });
+    ui.add_enabled_ui(draft.enabled, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.label("YYYY");
+            changed |= ui
+                .add(eframe::egui::DragValue::new(&mut draft.parts.year).range(1..=9999))
+                .changed();
+            ui.label("MM");
+            changed |= ui
+                .add(eframe::egui::DragValue::new(&mut draft.parts.month).range(1..=12))
+                .changed();
+            ui.label("DD");
+            changed |= ui
+                .add(eframe::egui::DragValue::new(&mut draft.parts.day).range(1..=31))
+                .changed();
+            ui.label("HH");
+            changed |= ui
+                .add(eframe::egui::DragValue::new(&mut draft.parts.hour).range(0..=23))
+                .changed();
+            ui.label("mm");
+            changed |= ui
+                .add(eframe::egui::DragValue::new(&mut draft.parts.minute).range(0..=59))
+                .changed();
+        });
+    });
+    if let Some(error) = &draft.error {
+        ui.colored_label(eframe::egui::Color32::LIGHT_RED, error);
+    }
+    changed
+}
+
+fn commit_time_bound(
+    draft: &TimeBoundDraft,
+    other: Option<DateTime<Local>>,
+    is_start: bool,
+) -> Result<Option<DateTime<Local>>, String> {
+    if !draft.enabled {
+        return Ok(None);
+    }
+    let value = local_datetime_from_parts(draft.parts).map_err(|error| error.to_string())?;
+    let range = if is_start {
+        validate_time_range(Some(value), other)
+    } else {
+        validate_time_range(other, Some(value))
+    };
+    range.map_err(|error| error.to_string())?;
+    Ok(Some(value))
+}
+
 pub fn native_window_options() -> eframe::NativeOptions {
     let persisted_window = default_settings_path()
         .ok()
@@ -547,11 +649,15 @@ pub fn native_window_options() -> eframe::NativeOptions {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_friend_ids_edit, status_for_analysis_error};
+    use super::{
+        TimeBoundDraft, apply_friend_ids_edit, commit_time_bound, status_for_analysis_error,
+    };
     use crate::{
         analyzer::AnalyzerError,
         model::{AppSettings, AppStatus},
+        validation::DateTimeParts,
     };
+    use chrono::{Local, TimeZone};
     use std::path::PathBuf;
 
     #[test]
@@ -591,5 +697,66 @@ mod tests {
             vec!["usr_550e8400-e29b-41d4-a716-446655440000"]
         );
         assert_eq!(invalid_lines, vec![2]);
+    }
+
+    #[test]
+    fn numeric_bound_commit_rejects_impossible_date_and_reverse_range() {
+        let invalid = TimeBoundDraft {
+            enabled: true,
+            parts: DateTimeParts {
+                year: 2024,
+                month: 2,
+                day: 30,
+                hour: 0,
+                minute: 0,
+            },
+            error: None,
+        };
+        assert!(commit_time_bound(&invalid, None, true).is_err());
+
+        let later_start = TimeBoundDraft {
+            enabled: true,
+            parts: DateTimeParts {
+                year: 2024,
+                month: 2,
+                day: 2,
+                hour: 0,
+                minute: 0,
+            },
+            error: None,
+        };
+        let earlier_end = Local.with_ymd_and_hms(2024, 2, 1, 0, 0, 0).single();
+        assert!(commit_time_bound(&later_start, earlier_end, true).is_err());
+    }
+
+    #[test]
+    fn numeric_bound_draft_round_trips_local_components() {
+        let value = Local.with_ymd_and_hms(2024, 2, 29, 23, 58, 0).single();
+        let draft = TimeBoundDraft::from_value(value);
+
+        assert!(draft.enabled);
+        assert_eq!(draft.parts.year, 2024);
+        assert_eq!(draft.parts.month, 2);
+        assert_eq!(draft.parts.day, 29);
+        assert_eq!(draft.parts.hour, 23);
+        assert_eq!(draft.parts.minute, 58);
+    }
+
+    #[test]
+    fn disabled_numeric_bound_clears_its_saved_value() {
+        let draft = TimeBoundDraft {
+            enabled: false,
+            parts: DateTimeParts {
+                year: 2024,
+                month: 2,
+                day: 29,
+                hour: 23,
+                minute: 58,
+            },
+            error: None,
+        };
+        let other = Local.with_ymd_and_hms(2024, 2, 29, 23, 59, 0).single();
+
+        assert_eq!(commit_time_bound(&draft, other, true).unwrap(), None);
     }
 }
