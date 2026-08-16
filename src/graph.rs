@@ -57,7 +57,7 @@ pub fn render(ui: &mut eframe::egui::Ui, graph: &WeeklyGraph, visible: &[bool; 7
         .x_axis_label("Local time bucket")
         .y_axis_label("Availability")
         .coordinates_formatter(
-            Corner::RightTop,
+            Corner::LeftTop,
             CoordinatesFormatter::new(move |point, _| {
                 format_hover_coordinates(
                     bucket_duration,

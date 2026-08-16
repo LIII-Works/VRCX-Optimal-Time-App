@@ -10,6 +10,8 @@ See [`THIRD_PARTY_NOTICES.txt`](THIRD_PARTY_NOTICES.txt) and [`src/analyzer/upst
 Portable Windows desktop application for calculating and viewing weekly VRChat friend availability from a VRCX SQLite database.
 
 > **Important prerequisite:** VRCX must stay installed and running long enough to capture a useful amount of online, offline, and activity history. This app can only graph the history that VRCX has already collected; a new or rarely used VRCX database will not have enough data for a meaningful graph.
+>
+> **Data limitation:** The graph reflects the periods when VRCX was available to collect data. If your computer is shut down, asleep, or VRCX is not running, that period is missing and can introduce bias. Normalization can reduce this bias, but it cannot remove it completely. Use this program as a reference, not as an exact measurement of availability.
 
 The application reads VRCX data through a read-only SQLite connection. It does not write to VRCX, use the VRChat API, or require a browser, analyzer sidecar, or separate configuration program.
 
