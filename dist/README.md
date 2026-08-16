@@ -1,5 +1,12 @@
 # VRCX Optimal Time App
 
+This project uses and references code and behavior from these upstream projects:
+
+- [zkxs/vrcx-optimal-time](https://github.com/zkxs/vrcx-optimal-time) for the VRCX activity analysis behavior.
+- [px-byte/vrcx-optimal-time-viewer](https://px-byte.github.io/vrcx-optimal-time-viewer/) for the graph and viewer behavior.
+
+See [`THIRD_PARTY_NOTICES.txt`](THIRD_PARTY_NOTICES.txt) and [`src/analyzer/upstream_license.txt`](src/analyzer/upstream_license.txt) for attribution and license details.
+
 Portable Windows desktop application for calculating and viewing weekly VRChat friend availability from a VRCX SQLite database.
 
 The application reads VRCX data through a read-only SQLite connection. It does not write to VRCX, use the VRChat API, or require a browser, analyzer sidecar, or separate configuration program.
